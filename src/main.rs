@@ -6,11 +6,11 @@ mod entity;
 mod persistent_store;
 mod index;  // <-- Ajout de cette ligne
 
+use hyperion::path::Path;
+use hyperion::value::Value;
+use hyperion::entity::reconstruct_entity;
+use hyperion::persistent_store::PersistentStore;
 use std::str::FromStr;
-use path::Path;
-use value::Value;
-use entity::reconstruct_entity;
-use persistent_store::PersistentStore;
 
 fn main() {
     // Create a persistent store in the "hyperiondb" directory

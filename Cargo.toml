@@ -12,3 +12,7 @@ sled = "0.34"      # Pour la persistance des données
 
 [dev-dependencies]
 tempfile = "3.3"   # Pour les tests temporaires
+
+[[example]]
+name = "bench_runner"
+path = "examples/bench_runner.rs"
