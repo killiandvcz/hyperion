@@ -4,14 +4,14 @@
 //! individual endpoints that share a common path prefix.
 
 use std::collections::HashMap;
-use std::str::FromStr;
+use serde::{Serialize, Deserialize};
 use crate::path::Path;
 use crate::value::Value;
 use crate::errors::{Result, StoreError};
 use crate::store::MemoryStore;
 
 /// A reconstructed entity from the database
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Entity {
     /// Null value
     Null,

@@ -3,18 +3,19 @@ mod value;
 mod store;
 mod errors;
 mod entity;
+mod persistent_store;
 
 use std::str::FromStr;
 use path::Path;
 use value::Value;
-use store::MemoryStore;
 use entity::reconstruct_entity;
+use persistent_store::PersistentStore;
 
 fn main() {
-    // Create a new in-memory store
-    let mut db = MemoryStore::new();
+    // Create a persistent store in the "hyperiondb" directory
+    let db = PersistentStore::open("hyperiondb").unwrap();
     
-    println!("Creating users in our endpoint-first database...");
+    println!("Creating users in our persistent endpoint-first database...");
     
     // Store user data as individual endpoints
     db.set(Path::from_str("users.u-123456.username").unwrap(), 
@@ -42,68 +43,51 @@ fn main() {
     db.set(Path::from_str("users.u-789012.active").unwrap(), 
            Value::Boolean(true)).unwrap();
     
-    // Store a third user
-    db.set(Path::from_str("users.u-345678.username").unwrap(), 
-           Value::String("charlie".to_string())).unwrap();
-           
-    db.set(Path::from_str("users.u-345678.email").unwrap(), 
-           Value::String("charlie@example.com".to_string())).unwrap();
-           
-    db.set(Path::from_str("users.u-345678.profile.details.bio").unwrap(), 
-           Value::String("UX designer with a passion for user-centric design".to_string())).unwrap();
-           
-    db.set(Path::from_str("users.u-345678.active").unwrap(), 
-           Value::Boolean(false)).unwrap();
+    // Flush changes to disk
+    db.flush().unwrap();
+    println!("Data has been persisted to disk!");
     
-    // Demonstrate single-level wildcard query
+    // Demonstrate querying data from the persistent store
     println!("\nQuerying all user emails with single-level wildcard:");
     let email_pattern = Path::from_str("users.*.email").unwrap();
-    let email_results = db.query(&email_pattern);
+    let email_results = db.query(&email_pattern).unwrap();
     
     for (path, value) in email_results {
         println!("{} = {}", path, value);
     }
     
-    // Demonstrate multi-level wildcard query
-    println!("\nQuerying all bios at any nesting level with multi-level wildcard:");
+    // Count the number of entries
+    let count = db.count().unwrap();
+    println!("\nTotal number of endpoints in the database: {}", count);
+    
+    // Demonstrate retrieving and reconstructing entities
+    let user_paths = db.list_prefix(&Path::from_str("users").unwrap()).unwrap();
+    println!("\nUser paths in the database:");
+    for path in &user_paths {
+        println!("- {}", path);
+    }
+    
+    // Show that data persists by closing and reopening the database
+    println!("\nClosing and reopening the database to demonstrate persistence...");
+    std::mem::drop(db);
+    
+    // Reopen the database
+    let reopened_db = PersistentStore::open("hyperiondb").unwrap();
+    
+    // Verify the data is still there
+    let username = reopened_db.get(&Path::from_str("users.u-123456.username").unwrap()).unwrap();
+    println!("After reopening - Username: {}", username);
+    
+    // Query using wildcards on the reopened database
+    println!("\nQuerying all bios with multi-level wildcard after reopening:");
     let bio_pattern = Path::from_str("users.**.bio").unwrap();
-    let bio_results = db.query(&bio_pattern);
+    let bio_results = reopened_db.query(&bio_pattern).unwrap();
     
     for (path, value) in bio_results {
         println!("{} = {}", path, value);
     }
     
-    // Reconstruct entities from wildcard query
-    println!("\nReconstructing all user entities:");
-    let users_pattern = Path::from_str("users.*").unwrap();
-    let user_paths = db.query_paths(&users_pattern);
-    
-    for user_path in user_paths {
-        println!("\nUser: {}", user_path);
-        
-        // Reconstruct and print the user entity
-        match reconstruct_entity(&db, user_path) {
-            Ok(entity) => println!("{}", entity.to_string_pretty(2)),
-            Err(e) => println!("Error reconstructing entity: {:?}", e),
-        }
-    }
-    
-    // Demonstrate combining wildcards with entity reconstruction
-    println!("\nFinding all active users:");
-    let active_pattern = Path::from_str("users.*.active").unwrap();
-    let active_results = db.query(&active_pattern);
-    
-    for (path, value) in active_results {
-        if let Value::Boolean(true) = value {
-            // Extract the user prefix from the path
-            let user_prefix = Path::from_str(&path.to_string().replace(".active", "")).unwrap();
-            
-            // Reconstruct and print the user entity
-            println!("\nActive user: {}", user_prefix);
-            match reconstruct_entity(&db, &user_prefix) {
-                Ok(entity) => println!("{}", entity.to_string_pretty(2)),
-                Err(e) => println!("Error reconstructing entity: {:?}", e),
-            }
-        }
-    }
+    // Clean up by removing the database files (optional, comment out to keep the database)
+//     println!("\nCleaning up database files...");
+//     std::fs::remove_dir_all("hyperiondb").unwrap();
 }

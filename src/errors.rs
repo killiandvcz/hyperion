@@ -20,6 +20,12 @@ pub enum StoreError {
     
     #[error("Internal error: {0}")]
     Internal(String),
+    
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+    
+    #[error("Deserialization error: {0}")]
+    DeserializationError(String),
 }
 
 /// Result type for database operations

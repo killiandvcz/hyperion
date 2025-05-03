@@ -6,6 +6,7 @@
 use std::fmt;
 use std::str::FromStr;
 use thiserror::Error;
+use serde::{Serialize, Deserialize};
 
 /// Errors that can occur when working with paths
 #[derive(Error, Debug, PartialEq)]
@@ -17,7 +18,7 @@ pub enum PathError {
 }
 
 /// Types of path segments
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SegmentType {
     /// Regular named segment
     Named(String),
@@ -30,7 +31,7 @@ pub enum SegmentType {
 }
 
 /// A segment in a path
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PathSegment(SegmentType);
 
 impl PathSegment {
@@ -124,7 +125,7 @@ impl PathSegment {
 }
 
 /// A path in the database (e.g., "users.u-123456.profile.bio")
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Path {
     segments: Vec<PathSegment>,
 }

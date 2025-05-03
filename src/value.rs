@@ -5,9 +5,10 @@
 
 use std::fmt;
 use crate::path::Path;
+use serde::{Serialize, Deserialize};
 
 /// The different types of values that can be stored in the database
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     /// Null value
     Null,
