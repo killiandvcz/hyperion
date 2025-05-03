@@ -36,8 +36,8 @@ pub struct BatcherConfig {
 impl Default for BatcherConfig {
     fn default() -> Self {
         BatcherConfig {
-            max_operations: 1000,
-            max_delay_ms: 1000, // 1 second
+            max_operations: 1500,
+            max_delay_ms: 1500, // 5 second
             auto_flush: true,
         }
     }
