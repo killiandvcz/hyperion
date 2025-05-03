@@ -1,0 +1,27 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* ~ "\n" | "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
+
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+number = @{ "-"? ~ ("0" | ASCII_NONZERO_DIGIT ~ ASCII_DIGIT*) ~ ("." ~ ASCII_DIGIT+)? }
+boolean = @{ "true" | "false" }
+null = @{ "null" }
+
+path_segment = { identifier | "[" ~ number ~ "]" }
+path = { identifier ~ ("." ~ path_segment)* }
+
+
+literal = { string | number | boolean | null }
+entity_expr = { "entity" ~ "(" ~ path ~ ")" }
+function_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
+expression = { entity_expr | function_call | path | literal  }
+
+assignment = { path ~ "=" ~ expression }
+delete_op = { "delete" ~ path }
+operation = { assignment | delete_op }
+
+return_stmt = { "return" ~ expression }
+query = { "{" ~ operation* ~ return_stmt ~ "}" }
+
+main = _{ SOI ~ query ~ EOI }

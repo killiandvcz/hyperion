@@ -9,6 +9,10 @@ serde = {version = "1.0", features=["derive"]}
 serde_json = "1.0"
 bincode = "1.3"    # Pour encoder/décoder en binaire
 sled = "0.34"      # Pour la persistance des données
+pest = "2.7"
+pest_derive = "2.7"
+chrono = "0.4"  # Pour la fonction now()
+uuid = { version = "1.4", features = ["v4"] }  # Pour la fonction uuid()
 
 [dev-dependencies]
 tempfile = "3.3"   # Pour les tests temporaires
@@ -16,3 +20,7 @@ tempfile = "3.3"   # Pour les tests temporaires
 [[example]]
 name = "bench_runner"
 path = "examples/bench_runner.rs"
+
+[[example]]
+name = "query"
+path = "examples/query_example.rs"

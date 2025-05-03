@@ -4,12 +4,12 @@
 //! significantly improving write performance by accumulating index
 //! updates and applying them in batches.
 
-use std::collections::{HashSet, HashMap};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Instant, Duration};
 
 use crate::path::Path;
-use crate::errors::{Result, StoreError};
+use crate::errors::Result;
 use crate::index::PathIndex;
 use crate::wildcard_index::WildcardIndex;
 

@@ -14,7 +14,7 @@ use crate::value::Value;
 use crate::errors::{Result, StoreError};
 use crate::index::{PathIndex, PersistentPrefixIndex};
 use crate::wildcard_index::WildcardIndex;
-use crate::index_batcher::{IndexBatcher, BatcherConfig, WildcardIndexBatcher, BatcherStats};
+use crate::index_batcher::{IndexBatcher, BatcherConfig, BatcherStats};
 
 /// A persistent store for the database using sled
 pub struct PersistentStore {
