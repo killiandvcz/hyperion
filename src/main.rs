@@ -4,6 +4,7 @@ mod store;
 mod errors;
 mod entity;
 mod persistent_store;
+mod index;  // <-- Ajout de cette ligne
 
 use std::str::FromStr;
 use path::Path;
