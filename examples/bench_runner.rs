@@ -29,6 +29,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Run storage benchmarks with 10,000 operations
     benchmark.run_storage_benchmarks(10_000)?;
     
+    // Run batcher benchmarks with 5,000 operations
+    benchmark.run_batcher_benchmarks(5_000)?;
+    
     // Print results
     benchmark.print_results();
     

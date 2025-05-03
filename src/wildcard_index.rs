@@ -8,6 +8,7 @@ use std::sync::{Arc, RwLock};
 use sled::{Db, Tree};
 use bincode::{serialize, deserialize};
 
+use crate::index::PathIndex;
 use crate::path::Path;
 use crate::errors::{Result, StoreError};
 
@@ -445,6 +446,72 @@ impl WildcardIndex {
     /// Check if a path matches a pattern (used for verification)
     fn path_matches_pattern(&self, path: &Path, pattern: &Path) -> bool {
         path.matches(pattern)
+    }
+}
+
+
+// Dans src/wildcard_index.rs, ajoutez en bas du fichier:
+
+// Implémentation du trait PathIndex pour WildcardIndex
+impl PathIndex for WildcardIndex {
+    fn add_path(&mut self, path: &Path) -> Result<()> {
+        self.add_path(path)
+    }
+    
+    fn remove_path(&mut self, path: &Path) -> Result<()> {
+        self.remove_path(path)
+    }
+    
+    fn find_prefix(&self, prefix: &Path) -> Result<Vec<Path>> {
+        // Pour l'interface PathIndex, nous utilisons la méthode find_matches
+        // en supposant que prefix est un motif exact (sans wildcards)
+        if prefix.has_wildcards() {
+            return Err(StoreError::InvalidOperation(
+                "Cannot use wildcards in prefix search".to_string()
+            ));
+        }
+        
+        // Créer une structure qui représente tous les chemins commençant par ce préfixe
+        let mut results = Vec::new();
+        
+        // Parcourir tous les chemins connus via les index
+        // Note: ceci est une implémentation naïve pour la compatibilité
+        for item in self.single_wildcard_tree.iter() {
+            let (_, value_bytes) = item
+                .map_err(|e| StoreError::Internal(format!("Failed to iterate index: {}", e)))?;
+            
+            let paths = deserialize::<HashSet<Path>>(&value_bytes)
+                .map_err(|e| StoreError::DeserializationError(e.to_string()))?;
+            
+            // Ajouter les chemins qui correspondent au préfixe
+            for path in paths {
+                if path.starts_with(prefix) && !results.contains(&path) {
+                    results.push(path);
+                }
+            }
+        }
+        
+        // Faire de même avec l'index multi-wildcard
+        for item in self.multi_wildcard_tree.iter() {
+            let (_, value_bytes) = item
+                .map_err(|e| StoreError::Internal(format!("Failed to iterate index: {}", e)))?;
+            
+            let paths = deserialize::<HashSet<Path>>(&value_bytes)
+                .map_err(|e| StoreError::DeserializationError(e.to_string()))?;
+            
+            // Ajouter les chemins qui correspondent au préfixe
+            for path in paths {
+                if path.starts_with(prefix) && !results.contains(&path) {
+                    results.push(path);
+                }
+            }
+        }
+        
+        Ok(results)
+    }
+    
+    fn clear(&mut self) -> Result<()> {
+        self.clear()
     }
 }
 

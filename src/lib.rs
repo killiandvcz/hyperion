@@ -12,6 +12,7 @@ pub mod persistent_store;
 pub mod index;
 pub mod bench;
 pub mod wildcard_index;
+pub mod index_batcher;
 
 // Re-export commonly used items for convenience
 pub use path::Path;
@@ -19,3 +20,4 @@ pub use value::Value;
 pub use store::MemoryStore;
 pub use persistent_store::PersistentStore;
 pub use errors::{Result, StoreError};
+pub use index_batcher::{BatcherConfig, BatcherStats};

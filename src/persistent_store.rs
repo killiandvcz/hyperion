@@ -4,7 +4,7 @@
 //! of the database store, storing path-value pairs on disk.
 
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use sled::Db;
 use bincode::{serialize, deserialize};
 
@@ -14,6 +14,7 @@ use crate::value::Value;
 use crate::errors::{Result, StoreError};
 use crate::index::{PathIndex, PersistentPrefixIndex};
 use crate::wildcard_index::WildcardIndex;
+use crate::index_batcher::{IndexBatcher, BatcherConfig, WildcardIndexBatcher, BatcherStats};
 
 /// A persistent store for the database using sled
 pub struct PersistentStore {
@@ -21,8 +22,14 @@ pub struct PersistentStore {
     db: Arc<Db>,
     /// Index for prefix searches
     prefix_index: Arc<RwLock<PersistentPrefixIndex>>,
+    /// Batcher for prefix index operations
+    prefix_batcher: Arc<Mutex<IndexBatcher<PersistentPrefixIndex, RwLock<PersistentPrefixIndex>>>>,
     /// Index for wildcard searches
     wildcard_index: Arc<RwLock<WildcardIndex>>,
+    /// Batcher for wildcard index operations  
+    wildcard_batcher: Arc<Mutex<IndexBatcher<WildcardIndex, RwLock<WildcardIndex>>>>,
+    /// Batcher configuration
+    batcher_config: BatcherConfig,
 }
 
 impl PersistentStore {
@@ -32,15 +39,30 @@ impl PersistentStore {
             .map_err(|e| StoreError::Internal(format!("Failed to open database: {}", e)))?;
         
         // Create the prefix index
-        let prefix_index = PersistentPrefixIndex::new(&db)?;
+        let prefix_index = Arc::new(RwLock::new(PersistentPrefixIndex::new(&db)?));
         
         // Create the wildcard index
-        let wildcard_index = WildcardIndex::new(&db)?;
+        let wildcard_index = Arc::new(RwLock::new(WildcardIndex::new(&db)?));
+        
+        // Create default batcher configuration
+        let batcher_config = BatcherConfig::default();
+        
+        // Create batchers
+        let prefix_batcher = Arc::new(Mutex::new(
+            IndexBatcher::new_rwlock(Arc::clone(&prefix_index), batcher_config.clone())
+        ));
+        
+        let wildcard_batcher = Arc::new(Mutex::new(
+            IndexBatcher::new_rwlock(Arc::clone(&wildcard_index), batcher_config.clone())
+        ));
         
         let store = PersistentStore {
             db: Arc::new(db),
-            prefix_index: Arc::new(RwLock::new(prefix_index)),
-            wildcard_index: Arc::new(RwLock::new(wildcard_index)),
+            prefix_index,
+            prefix_batcher,
+            wildcard_index,
+            wildcard_batcher,
+            batcher_config,
         };
         
         // Build initial indexes if the database already contains data
@@ -48,7 +70,6 @@ impl PersistentStore {
         
         Ok(store)
     }
-    
     /// Rebuild all indexes from scratch
     fn rebuild_indexes(&self) -> Result<()> {
         // Clear indexes
@@ -99,13 +120,13 @@ impl PersistentStore {
         self.db.insert(path_bytes, value_bytes)
             .map_err(|e| StoreError::Internal(format!("Failed to insert data: {}", e)))?;
         
-        // Update indexes
+        // Update indexes using batchers
         {
-            let mut prefix_idx = self.prefix_index.write().unwrap();
-            prefix_idx.add_path(&path)?;
+            let mut prefix_batcher = self.prefix_batcher.lock().unwrap();
+            prefix_batcher.batch_add(path.clone())?;
             
-            let mut wildcard_idx = self.wildcard_index.write().unwrap();
-            wildcard_idx.add_path(&path)?;
+            let mut wildcard_batcher = self.wildcard_batcher.lock().unwrap();
+            wildcard_batcher.batch_add(path)?;
         }
         
         Ok(())
@@ -151,13 +172,13 @@ impl PersistentStore {
             return Err(StoreError::NotFound(path.clone()));
         }
         
-        // Update indexes
+        // Update indexes using batchers
         {
-            let mut prefix_idx = self.prefix_index.write().unwrap();
-            prefix_idx.remove_path(path)?;
+            let mut prefix_batcher = self.prefix_batcher.lock().unwrap();
+            prefix_batcher.batch_remove(path.clone())?;
             
-            let mut wildcard_idx = self.wildcard_index.write().unwrap();
-            wildcard_idx.remove_path(path)?;
+            let mut wildcard_batcher = self.wildcard_batcher.lock().unwrap();
+            wildcard_batcher.batch_remove(path.clone())?;
         }
         
         Ok(())
@@ -256,8 +277,60 @@ impl PersistentStore {
     
     /// Flush changes to disk
     pub fn flush(&self) -> Result<()> {
+        // Flush database to disk
         self.db.flush()
-        .map_err(|e| StoreError::Internal(format!("Failed to flush database: {}", e)))?;
+            .map_err(|e| StoreError::Internal(format!("Failed to flush database: {}", e)))?;
+        
+        // Flush index batchers
+        {
+            let mut prefix_batcher = self.prefix_batcher.lock().unwrap();
+            prefix_batcher.flush()?;
+            
+            let mut wildcard_batcher = self.wildcard_batcher.lock().unwrap();
+            wildcard_batcher.flush()?;
+        }
+        
+        Ok(())
+    }
+
+    pub fn batcher_stats(&self) -> Result<(BatcherStats, BatcherStats)> {
+        let prefix_stats = {
+            let batcher = self.prefix_batcher.lock().unwrap();
+            batcher.stats()
+        };
+        
+        let wildcard_stats = {
+            let batcher = self.wildcard_batcher.lock().unwrap();
+            batcher.stats()
+        };
+        
+        Ok((prefix_stats, wildcard_stats))
+    }
+
+    pub fn configure_batcher(&mut self, config: BatcherConfig) -> Result<()> {
+        self.batcher_config = config.clone();
+        
+        // Flush existing batchers before reconfiguring
+        {
+            let mut prefix_batcher = self.prefix_batcher.lock().unwrap();
+            prefix_batcher.flush()?;
+            
+            let mut wildcard_batcher = self.wildcard_batcher.lock().unwrap();
+            wildcard_batcher.flush()?;
+        }
+        
+        // Create new batchers with the updated configuration
+        let prefix_batcher = Arc::new(Mutex::new(
+            IndexBatcher::new_rwlock(Arc::clone(&self.prefix_index), config.clone())
+        ));
+        
+        let wildcard_batcher = Arc::new(Mutex::new(
+            IndexBatcher::new_rwlock(Arc::clone(&self.wildcard_index), config)
+
+        ));
+        
+        self.prefix_batcher = prefix_batcher;
+        self.wildcard_batcher = wildcard_batcher;
         
         Ok(())
     }

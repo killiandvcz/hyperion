@@ -14,6 +14,7 @@ use crate::path::Path;
 use crate::value::Value;
 use crate::persistent_store::PersistentStore;
 use crate::errors::Result;
+use crate::BatcherConfig;
 
 /// A benchmark result for a single operation
 #[derive(Debug, Clone)]
@@ -82,6 +83,104 @@ impl Benchmark {
         self.results.insert(name.to_string(), result.clone());
         
         Ok(&self.results[name])
+    }
+
+    /// Run benchmarks comparing batched vs non-batched index updates
+    pub fn run_batcher_benchmarks(&mut self, count: usize) -> Result<()> {
+        println!("Running batcher benchmarks with {} operations...", count);
+        
+        // Créer un Rc<RefCell<>> pour partager le store avec les closures
+        let store_ref = Rc::clone(&self.store);
+        
+        // Benchmark standard set operations (with default batching)
+        let store_ref_set_batched = Rc::clone(&store_ref);
+        let mut set_counter = 0;
+        self.run("set_with_batching", count, || {
+            let user_id = format!("u-{}", set_counter % 1000);
+            let field = match set_counter % 5 {
+                0 => "username",
+                1 => "email",
+                2 => "profile.bio",
+                3 => "profile.location",
+                _ => "active",
+            };
+            
+            let path_str = format!("users.{}.{}", user_id, field);
+            let path = Path::from_str(&path_str)?;
+            
+            let value = match field {
+                "username" => Value::String(format!("user{}", set_counter)),
+                "email" => Value::String(format!("user{}@example.com", set_counter)),
+                "profile.bio" => Value::String(format!("Bio for user {}", set_counter)),
+                "profile.location" => Value::String("San Francisco, CA".to_string()),
+                _ => Value::Boolean(true),
+            };
+            
+            // Emprunter de façon mutable uniquement ici
+            store_ref_set_batched.borrow_mut().set(path, value)?;
+            set_counter += 1;
+            
+            Ok(())
+        })?;
+        
+        // Get the batcher stats
+        let (prefix_stats, wildcard_stats) = store_ref.borrow().batcher_stats()?;
+        println!("Prefix index batcher: {:?}", prefix_stats);
+        println!("Wildcard index batcher: {:?}", wildcard_stats);
+        
+        // Force flush after the benchmark
+        store_ref.borrow_mut().flush()?;
+        
+        // Disable batching for comparison
+        {
+            let mut store = store_ref.borrow_mut();
+            let no_batch_config = BatcherConfig {
+                max_operations: 1,  // Flush after each operation
+                max_delay_ms: 0,    // No delay
+                auto_flush: true,   // Always flush
+            };
+            store.configure_batcher(no_batch_config)?;
+        }
+        
+        // Benchmark set operations without batching
+        let store_ref_set_no_batch = Rc::clone(&store_ref);
+        set_counter = 0;
+        self.run("set_without_batching", count / 10, || {  // Fewer operations as it will be slower
+            let user_id = format!("u-{}", set_counter % 1000);
+            let field = match set_counter % 5 {
+                0 => "username",
+                1 => "email",
+                2 => "profile.bio",
+                3 => "profile.location",
+                _ => "active",
+            };
+            
+            let path_str = format!("users.{}.{}", user_id, field);
+            let path = Path::from_str(&path_str)?;
+            
+            let value = match field {
+                "username" => Value::String(format!("user{}", set_counter)),
+                "email" => Value::String(format!("user{}@example.com", set_counter)),
+                "profile.bio" => Value::String(format!("Bio for user {}", set_counter)),
+                "profile.location" => Value::String("San Francisco, CA".to_string()),
+                _ => Value::Boolean(true),
+            };
+            
+            store_ref_set_no_batch.borrow_mut().set(path, value)?;
+            set_counter += 1;
+            
+            Ok(())
+        })?;
+        
+        // Reset to default batching configuration
+        {
+            let mut store = store_ref.borrow_mut();
+            store.configure_batcher(BatcherConfig::default())?;
+        }
+        
+        println!("Batcher benchmarks completed.");
+        
+        Ok(())
     }
     
     /// Run a benchmarking suite for path operations

@@ -6,12 +6,14 @@ mod entity;
 mod persistent_store;
 mod index;  // <-- Ajout de cette ligne
 mod wildcard_index;
+mod index_batcher;
 
 use hyperion::path::Path;
 use hyperion::value::Value;
 use hyperion::entity::reconstruct_entity;
 use hyperion::persistent_store::PersistentStore;
 use std::str::FromStr;
+use hyperion::index_batcher::BatcherStats;
 
 fn main() {
     // Create a persistent store in the "hyperiondb" directory
