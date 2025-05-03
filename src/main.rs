@@ -5,6 +5,7 @@ mod errors;
 mod entity;
 mod persistent_store;
 mod index;  // <-- Ajout de cette ligne
+mod wildcard_index;
 
 use hyperion::path::Path;
 use hyperion::value::Value;

@@ -11,6 +11,7 @@ pub mod entity;
 pub mod persistent_store;
 pub mod index;
 pub mod bench;
+pub mod wildcard_index;
 
 // Re-export commonly used items for convenience
 pub use path::Path;

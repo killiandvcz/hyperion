@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use sled::{Db, IVec};
+use sled::Db;
 use bincode::{serialize, deserialize};
 
 
@@ -13,6 +13,7 @@ use crate::path::Path;
 use crate::value::Value;
 use crate::errors::{Result, StoreError};
 use crate::index::{PathIndex, PersistentPrefixIndex};
+use crate::wildcard_index::WildcardIndex;
 
 /// A persistent store for the database using sled
 pub struct PersistentStore {
@@ -20,39 +21,62 @@ pub struct PersistentStore {
     db: Arc<Db>,
     /// Index for prefix searches
     prefix_index: Arc<RwLock<PersistentPrefixIndex>>,
+    /// Index for wildcard searches
+    wildcard_index: Arc<RwLock<WildcardIndex>>,
 }
 
 impl PersistentStore {
     /// Open a persistent store at the given path
     pub fn open<P: Into<PathBuf>>(path: P) -> Result<Self> {
         let db = sled::open(path.into())
-        .map_err(|e| StoreError::Internal(format!("Failed to open database: {}", e)))?;
+            .map_err(|e| StoreError::Internal(format!("Failed to open database: {}", e)))?;
         
-        // Create and load the persistent index
+        // Create the prefix index
         let prefix_index = PersistentPrefixIndex::new(&db)?;
         
-        Ok(PersistentStore {
+        // Create the wildcard index
+        let wildcard_index = WildcardIndex::new(&db)?;
+        
+        let store = PersistentStore {
             db: Arc::new(db),
             prefix_index: Arc::new(RwLock::new(prefix_index)),
-        })
+            wildcard_index: Arc::new(RwLock::new(wildcard_index)),
+        };
+        
+        // Build initial indexes if the database already contains data
+        store.rebuild_indexes()?;
+        
+        Ok(store)
     }
     
-    /// Rebuild the index from scratch using all paths in the database
-    fn rebuild_index(&self) -> Result<()> {
-        let mut index = self.prefix_index.write().unwrap();
-        index.clear()?;
+    /// Rebuild all indexes from scratch
+    fn rebuild_indexes(&self) -> Result<()> {
+        // Clear indexes
+        {
+            let mut prefix_idx = self.prefix_index.write().unwrap();
+            prefix_idx.clear()?;
+            
+            let mut wildcard_idx = self.wildcard_index.write().unwrap();
+            wildcard_idx.clear()?;
+        }
         
-        // Iterate through all keys and add them to the index
+        // Iterate through all paths and add them to indexes
         for item in self.db.iter() {
             let (key_bytes, _) = item
-            .map_err(|e| StoreError::Internal(format!("Failed to iterate database: {}", e)))?;
+                .map_err(|e| StoreError::Internal(format!("Failed to iterate database: {}", e)))?;
             
             // Deserialize the path
             let path: Path = deserialize(&key_bytes)
-            .map_err(|e| StoreError::Internal(format!("Failed to deserialize path: {}", e)))?;
+                .map_err(|e| StoreError::DeserializationError(e.to_string()))?;
             
-            // Add to index
-            index.add_path(&path)?;
+            // Add to indexes
+            {
+                let mut prefix_idx = self.prefix_index.write().unwrap();
+                prefix_idx.add_path(&path)?;
+                
+                let mut wildcard_idx = self.wildcard_index.write().unwrap();
+                wildcard_idx.add_path(&path)?;
+            }
         }
         
         Ok(())
@@ -75,9 +99,14 @@ impl PersistentStore {
         self.db.insert(path_bytes, value_bytes)
             .map_err(|e| StoreError::Internal(format!("Failed to insert data: {}", e)))?;
         
-        // Update the index
-        let mut index = self.prefix_index.write().unwrap();
-        index.add_path(&path)?;
+        // Update indexes
+        {
+            let mut prefix_idx = self.prefix_index.write().unwrap();
+            prefix_idx.add_path(&path)?;
+            
+            let mut wildcard_idx = self.wildcard_index.write().unwrap();
+            wildcard_idx.add_path(&path)?;
+        }
         
         Ok(())
     }
@@ -122,9 +151,14 @@ impl PersistentStore {
             return Err(StoreError::NotFound(path.clone()));
         }
         
-        // Update the index
-        let mut index = self.prefix_index.write().unwrap();
-        index.remove_path(path)?;
+        // Update indexes
+        {
+            let mut prefix_idx = self.prefix_index.write().unwrap();
+            prefix_idx.remove_path(path)?;
+            
+            let mut wildcard_idx = self.wildcard_index.write().unwrap();
+            wildcard_idx.remove_path(path)?;
+        }
         
         Ok(())
     }
@@ -191,21 +225,15 @@ impl PersistentStore {
             return Ok(results);
         }
         
-        // With wildcards, we need to scan all paths
-        for item in self.db.iter() {
-            let (key_bytes, value_bytes) = item
-            .map_err(|e| StoreError::Internal(format!("Failed to iterate database: {}", e)))?;
-            
-            // Deserialize the path
-            let path: Path = deserialize(&key_bytes)
-            .map_err(|e| StoreError::Internal(format!("Failed to deserialize path: {}", e)))?;
-            
-            // Check if it matches the pattern
-            if path.matches(pattern) {
-                // Deserialize the value
-                let value: Value = deserialize(&value_bytes)
-                .map_err(|e| StoreError::Internal(format!("Failed to deserialize value: {}", e)))?;
-                
+        // Use the wildcard index to find matching paths
+        let matching_paths = {
+            let wildcard_idx = self.wildcard_index.read().unwrap();
+            wildcard_idx.find_matches(pattern)?
+        };
+        
+        // Get the values for all matching paths
+        for path in matching_paths {
+            if let Ok(value) = self.get(&path) {
                 results.push((path, value));
             }
         }
