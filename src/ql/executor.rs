@@ -19,8 +19,11 @@ pub fn execute_query(store: &PersistentStore, query: &Query) -> Result<Value> {
         execute_operation(store, &context, operation)?;
     }
     
-    // Évaluer et retourner l'expression de retour
-    context.evaluate(&query.return_expr)
+    // Évaluer et retourner l'expression de retour, ou true si pas de return
+    match &query.return_expr {
+        Some(expr) => context.evaluate(expr),
+        None => Ok(Value::Boolean(true)), // Retourne true si toutes les opérations ont réussi
+    }
 }
 
 /// Execute a single operation

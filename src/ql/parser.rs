@@ -51,9 +51,10 @@ fn parse_query_ast(pairs: Pairs<Rule>) -> Result<Query> {
         }
     }
     
-    // Vérifier qu'il y a une expression de retour
-    let return_expr = return_expr.ok_or_else(|| 
-        StoreError::InvalidOperation("Missing return statement".to_string()))?;
+    // Vérifier qu'il y a au moins des opérations si pas de return
+    if operations.is_empty() && return_expr.is_none() {
+        return Err(StoreError::InvalidOperation("Query must contain at least one operation or a return statement".to_string()));
+    }
     
     Ok(Query {
         operations,

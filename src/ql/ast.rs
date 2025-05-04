@@ -11,7 +11,7 @@ pub struct Query {
     /// Operations to perform
     pub operations: Vec<Operation>,
     /// Expression to return
-    pub return_expr: Expression,
+    pub return_expr: Option<Expression>,
 }
 
 /// Types of operations

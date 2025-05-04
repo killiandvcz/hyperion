@@ -18,9 +18,9 @@ expression = { function_call | path | literal  }
 
 assignment = { path ~ "=" ~ expression }
 delete_op = { "delete" ~ path }
-operation = { assignment | delete_op }
+operation = { (assignment | delete_op) ~ ";" }
 
 return_stmt = { "return" ~ expression }
-query = { "{" ~ operation* ~ return_stmt ~ "}" }
+query = { "{" ~ operation* ~ return_stmt? ~ "}" }
 
 main = _{ SOI ~ query ~ EOI }

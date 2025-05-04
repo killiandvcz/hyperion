@@ -1,3 +1,5 @@
 /target
 /JS
 /hyperiondb
+/test_db
+hyperion_history.txt
