@@ -129,7 +129,11 @@ impl Repl {
                     return Ok(());
                 }
                 
-                commands::connect::execute(&mut self.context, &std::path::PathBuf::from(parts[1]))?;
+                if let Some(path_str) = std::path::PathBuf::from(parts[1]).to_str() {
+                    commands::connect::execute(&mut self.context, path_str)?;
+                } else {
+                    println!("{}", self.context.formatter().format_error("Chemin invalide"));
+                }
             },
             "list" => {
                 let prefix = if parts.len() >= 2 { Some(parts[1]) } else { None };

@@ -1,3 +1,4 @@
+// src/bin/hyperion_cli/app.rs (modifié)
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -23,9 +24,9 @@ struct Cli {
     #[arg(short, long)]
     interactive: bool,
 
-    /// Chemin vers la base de données
+    /// URL du serveur Hyperion
     #[arg(short, long)]
-    db_path: Option<PathBuf>,
+    server: Option<String>,
 
     /// Commande à exécuter
     #[command(subcommand)]
@@ -34,10 +35,10 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Se connecter à une base de données
+    /// Se connecter à un serveur Hyperion
     Connect {
-        /// Chemin vers la base de données
-        path: PathBuf,
+        /// URL du serveur
+        url: String,
     },
     
     /// Exécuter une requête HyperionQL
@@ -59,18 +60,18 @@ pub fn run() -> Result<()> {
     let cli = Cli::parse();
     
     // Créer un contexte
-    let mut context = Context::new(cli.verbose, cli.format);
+    let mut context = Context::new(cli.verbose, cli.format)?;
     
-    // Si un chemin de DB est fourni, se connecter
-    if let Some(path) = cli.db_path {
-        commands::connect::execute(&mut context, &path)?;
+    // Si une URL de serveur est fournie, se connecter
+    if let Some(server) = cli.server {
+        commands::connect::execute(&mut context, &server)?;
     }
     
     // Exécuter la commande spécifiée ou entrer en mode interactif
     match (cli.command, cli.interactive) {
-        (Some(Commands::Connect { path }), _) => {
-            commands::connect::execute(&mut context, &path)?;
-            println!("Connecté à la base de données: {}", path.display());
+        (Some(Commands::Connect { url }), _) => {
+            commands::connect::execute(&mut context, &url)?;
+            println!("Connecté au serveur: {}", url);
         },
         (Some(Commands::Query { query }), _) => {
             commands::query::execute(&mut context, &query)?;
@@ -84,7 +85,7 @@ pub fn run() -> Result<()> {
             repl.run()?;
         },
         (None, _) => {
-            println!("Erreur : Aucune commande spécifiée et non connecté à une base de données.");
+            println!("Erreur : Aucune commande spécifiée et non connecté à un serveur.");
             println!("Utilisez --help pour voir les options disponibles.");
         }
     }

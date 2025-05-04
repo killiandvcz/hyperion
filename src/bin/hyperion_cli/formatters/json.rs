@@ -1,8 +1,8 @@
 use anyhow::Result;
 use colored::*;
 use serde_json::json;
-use hyperion::value::Value;
-use hyperion::entity::Entity;
+use hyperion::Value;
+use hyperion::Entity;
 use crate::formatters::Formatter;
 use base64;
 
@@ -29,6 +29,16 @@ impl JsonFormatter {
 }
 
 impl Formatter for JsonFormatter {
+    // src/bin/hyperion_cli/formatters/json.rs (modifié)
+    // Ajouter cette méthode à l'implémentation de Formatter pour JsonFormatter
+    fn format_json(&self, json: &serde_json::Value) -> Result<String> {
+        if self.pretty {
+            Ok(serde_json::to_string_pretty(json)?)
+        } else {
+            Ok(serde_json::to_string(json)?)
+        }
+    }
+    
     fn format_value(&self, value: &Value) -> Result<String> {
         let json_value = match value {
             Value::Null => json!(null),

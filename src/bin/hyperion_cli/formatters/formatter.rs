@@ -1,6 +1,7 @@
+// src/bin/hyperion_cli/formatters/formatter.rs (modifié)
 use anyhow::Result;
-use hyperion::value::Value;
-use hyperion::entity::Entity;
+use hyperion::Value;
+use hyperion::Entity;
 
 /// Trait définissant un formateur de sortie
 pub trait Formatter {
@@ -21,4 +22,7 @@ pub trait Formatter {
     
     /// Formate un message de succès
     fn format_success(&self, success: &str) -> String;
+    
+    /// Formate une valeur JSON
+    fn format_json(&self, json: &serde_json::Value) -> Result<String>;
 }

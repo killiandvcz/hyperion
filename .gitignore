@@ -2,4 +2,5 @@
 /JS
 /hyperiondb
 /test_db
+**/data
 hyperion_history.txt

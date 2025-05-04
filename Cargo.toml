@@ -21,7 +21,9 @@ prettytable-rs = "0.10"
 anyhow = "1.0"
 log = "0.4"
 env_logger = "0.10"
-tokio = { version = "1.44.2", features = ["rt", "sync", "rt-multi-thread"] }
+tokio = { version = "1.44.2", features = ["rt", "sync", "rt-multi-thread", "macros"] }
+warp = "0.3.7"
+reqwest = { version = "0.12.15", features = ["json"] }
 
 [dev-dependencies]
 tempfile = "3.3"   
@@ -29,6 +31,10 @@ tempfile = "3.3"
 [[bin]]
 name = "hyperion-cli"
 path = "src/bin/hyperion_cli/main.rs"
+
+[[bin]]
+name = "hyperion-server"
+path = "src/bin/server/main.rs"
 
 [[example]]
 name = "bench_runner"

@@ -4,6 +4,7 @@ mod commands;
 mod formatters;
 mod repl;
 mod utils;
+mod client;
 
 use anyhow::Result;
 use log::info;

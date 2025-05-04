@@ -6,8 +6,8 @@
 // Exporter les modules
 pub mod core;
 pub mod storage;
-// Module temporaires - à déplacer dans core ou à supprimer
 pub mod ql;
+pub mod server;
 
 use std::path::{Path as StdPath, PathBuf};
 use tokio::runtime::Runtime;
@@ -98,6 +98,19 @@ impl Hyperion {
             Ok(None)
         }
     }
+    
+    // Ajouter à src/lib.rs
+    /// Crée une instance Hyperion à partir d'un store existant
+    pub fn from_store(store: Box<dyn Store>) -> Self {
+        Hyperion {
+            store,
+            runtime: None,
+        }
+    }
+
+    pub fn store_mut(&mut self) -> &mut dyn Store {
+        &mut *self.store
+    }
 }
 
 // Ré-exporter les types principaux pour faciliter l'utilisation
@@ -106,3 +119,5 @@ pub use core::value::Value;
 pub use core::entity::Entity;
 pub use core::errors::{Result, StoreError};
 pub use core::index::IndexStats;
+
+

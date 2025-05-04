@@ -1,5 +1,7 @@
+// src/bin/hyperion_cli/context.rs (modifié)
 use std::sync::Arc;
-use hyperion::persistent_store::PersistentStore;
+use tokio::runtime::Runtime;
+use crate::client::{HyperionClient, ClientConfig};
 use crate::formatters::{OutputFormat, Formatter};
 use crate::formatters::text::TextFormatter;
 use crate::formatters::json::JsonFormatter;
@@ -8,8 +10,8 @@ use anyhow::{Result, anyhow};
 
 /// Contexte d'exécution du CLI
 pub struct Context {
-    /// Magasin persistant Hyperion
-    store: Option<Arc<PersistentStore>>,
+    /// Client Hyperion
+    client: Option<HyperionClient>,
     
     /// Format de sortie
     format: OutputFormat,
@@ -19,38 +21,60 @@ pub struct Context {
     
     /// Formateur actuel
     formatter: Box<dyn Formatter>,
+    
+    /// Runtime Tokio pour les appels asynchrones
+    runtime: Runtime,
 }
 
 impl Context {
     /// Crée un nouveau contexte
-    pub fn new(verbosity: u8, format: OutputFormat) -> Self {
+    pub fn new(verbosity: u8, format: OutputFormat) -> Result<Self> {
         let formatter: Box<dyn Formatter> = match format {
             OutputFormat::Text => Box::new(TextFormatter::new()),
             OutputFormat::Json => Box::new(JsonFormatter::new()),
             OutputFormat::Table => Box::new(TableFormatter::new()),
         };
         
-        Context {
-            store: None,
+        // Créer un runtime Tokio
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| anyhow!("Failed to create Tokio runtime: {}", e))?;
+        
+        Ok(Context {
+            client: None,
             format,
             verbosity,
             formatter,
-        }
+            runtime,
+        })
     }
     
-    /// Vérifie si le contexte est connecté à une base de données
+    /// Vérifie si le contexte est connecté à un serveur
     pub fn is_connected(&self) -> bool {
-        self.store.is_some()
+        self.client.is_some()
     }
     
-    /// Obtient une référence au store
-    pub fn store(&self) -> Result<Arc<PersistentStore>> {
-        self.store.clone().ok_or_else(|| anyhow!("Non connecté à une base de données"))
+    /// Obtient une référence au client
+    pub fn client(&self) -> Result<&HyperionClient> {
+        self.client.as_ref().ok_or_else(|| anyhow!("Non connecté à un serveur Hyperion"))
     }
     
-    /// Définit le store
-    pub fn set_store(&mut self, store: PersistentStore) {
-        self.store = Some(Arc::new(store));
+    /// Définit le client
+    pub fn connect(&mut self, server_url: &str) -> Result<()> {
+        let config = ClientConfig {
+            server_url: server_url.to_string(),
+        };
+        
+        let client = HyperionClient::with_config(config);
+        
+        // Vérifier la connexion
+        self.runtime.block_on(async {
+            client.check_connection().await
+        })?;
+        
+        self.client = Some(client);
+        Ok(())
     }
     
     /// Obtient le formateur actuel
@@ -78,5 +102,10 @@ impl Context {
     /// Définit le niveau de verbosité
     pub fn set_verbosity(&mut self, verbosity: u8) {
         self.verbosity = verbosity;
+    }
+    
+    /// Obtient le runtime Tokio
+    pub fn runtime(&self) -> &Runtime {
+        &self.runtime
     }
 }

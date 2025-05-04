@@ -1,5 +1,5 @@
 use thiserror::Error;
-use hyperion::errors::StoreError;
+use hyperion::StoreError;
 
 #[derive(Error, Debug)]
 pub enum CliError {
