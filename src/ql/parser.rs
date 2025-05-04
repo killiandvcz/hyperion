@@ -9,7 +9,7 @@ use pest::iterators::{Pair, Pairs};
 use crate::errors::{Result, StoreError};
 use crate::path::Path;
 use crate::value::Value;
-use crate::ql::ast::{Query, Operation, Expression};
+use crate::ql::ast::{Query, Operation, Expression, ComparisonOperator, LogicalOperator, Condition, WhereClause};
 use std::str::FromStr;
 
 #[derive(Parser)]
@@ -91,7 +91,34 @@ fn parse_operation(pair: Pair<Rule>) -> Result<Operation> {
     }
 }
 
+// Modifier la fonction parse_expression pour gérer les nouveaux types d'expressions
 fn parse_expression(pair: Pair<Rule>) -> Result<Expression> {
+    let mut inner_pairs = pair.into_inner();
+    
+    // Première partie: l'expression primaire
+    let primary_expr_pair = inner_pairs.next()
+        .ok_or_else(|| StoreError::InvalidOperation("Missing primary expression".to_string()))?;
+    
+    let primary_expr = parse_primary_expression(primary_expr_pair)?;
+    
+    // Vérifier s'il y a une clause where
+    if let Some(where_clause_pair) = inner_pairs.next() {
+        if where_clause_pair.as_rule() == Rule::where_clause {
+            let where_clause = parse_where_clause(where_clause_pair)?;
+            
+            return Ok(Expression::Filtered {
+                base: Box::new(primary_expr),
+                where_clause,
+            });
+        }
+    }
+    
+    // Pas de clause where, retourner l'expression primaire
+    Ok(primary_expr)
+}
+
+// Nouvelle fonction pour parser une expression primaire
+fn parse_primary_expression(pair: Pair<Rule>) -> Result<Expression> {
     let inner = pair.into_inner().next().unwrap();
     
     match inner.as_rule() {
@@ -100,32 +127,118 @@ fn parse_expression(pair: Pair<Rule>) -> Result<Expression> {
             let path = parse_path(inner)?;
             Ok(Expression::Path(path))
         },
-        // Supprimer ou modifier cette partie pour ne plus traiter entity_expr
-        // Rule::entity_expr => { ... }
+        Rule::their_path => {
+            let mut segments = Vec::new();
+            
+            // On itère sur toutes les paires internes (les segments de chemin)
+            for segment_pair in inner.into_inner() {
+                if segment_pair.as_rule() == Rule::path_segment {
+                    segments.push(segment_pair.as_str().to_string());
+                }
+            }
+
+            println!("Parsed their_path segments: {:?}", segments);
+            
+            Ok(Expression::TheirPath(segments))
+        },
         Rule::function_call => {
-            // Si on veut conserver la compatibilité avec entity() pour l'instant,
-            // on pourrait ajouter une vérification spéciale ici
             let mut inner_pairs = inner.into_inner();
             let name_pair = inner_pairs.next().unwrap();
             let name = name_pair.as_str().to_string();
             
             let mut arguments = Vec::new();
             for arg_pair in inner_pairs {
-                let arg = parse_expression(arg_pair)?;
+                let arg = parse_primary_expression(arg_pair)?;
                 arguments.push(arg);
-            }
-            
-            // Pour rétrocompatibilité temporaire
-            if name == "entity" && arguments.len() == 1 {
-                if let Expression::Path(path) = &arguments[0] {
-                    return Ok(Expression::Path(path.clone()));
-                }
             }
             
             Ok(Expression::FunctionCall { name, arguments })
         },
         _ => Err(StoreError::InvalidOperation(
-            format!("Unexpected expression type: {:?}", inner.as_rule())
+            format!("Unexpected primary expression type: {:?}", inner.as_rule())
+        )),
+    }
+}
+
+fn parse_where_clause(pair: Pair<Rule>) -> Result<WhereClause> {
+    let where_expr_pair = pair.into_inner().next().unwrap();
+    
+    let mut conditions_pairs = where_expr_pair.into_inner();
+    
+    // La première condition est obligatoire
+    let first_condition_pair = conditions_pairs.next()
+        .ok_or_else(|| StoreError::InvalidOperation("Missing condition in where clause".to_string()))?;
+    
+    let first_condition = parse_condition(first_condition_pair)?;
+    
+    // Collecter les conditions supplémentaires avec leurs opérateurs logiques
+    let mut additional_conditions = Vec::new();
+    
+    while let Some(op_pair) = conditions_pairs.next() {
+        if op_pair.as_rule() != Rule::logical_op {
+            return Err(StoreError::InvalidOperation(
+                format!("Expected logical operator, found {:?}", op_pair.as_rule())
+            ));
+        }
+        
+        let operator = parse_logical_operator(op_pair)?;
+        
+        let cond_pair = conditions_pairs.next()
+            .ok_or_else(|| StoreError::InvalidOperation("Missing condition after logical operator".to_string()))?;
+        
+        let condition = parse_condition(cond_pair)?;
+        
+        additional_conditions.push((operator, condition));
+    }
+    
+    Ok(WhereClause {
+        first_condition,
+        additional_conditions,
+    })
+}
+
+
+fn parse_condition(pair: Pair<Rule>) -> Result<Condition> {
+    let mut inner_pairs = pair.into_inner();
+    
+    let left_pair = inner_pairs.next().unwrap();
+    let left = Box::new(parse_primary_expression(left_pair)?);
+    
+    let op_pair = inner_pairs.next().unwrap();
+    let operator = parse_comparison_operator(op_pair)?;
+    
+    let right_pair = inner_pairs.next().unwrap();
+    let right = Box::new(parse_primary_expression(right_pair)?);
+    
+    Ok(Condition {
+        left,
+        operator,
+        right,
+    })
+}
+
+// Nouvelle fonction pour parser un opérateur de comparaison
+fn parse_comparison_operator(pair: Pair<Rule>) -> Result<ComparisonOperator> {
+    match pair.as_str() {
+        "==" => Ok(ComparisonOperator::Equal),
+        "!=" => Ok(ComparisonOperator::NotEqual),
+        "<" => Ok(ComparisonOperator::LessThan),
+        "<=" => Ok(ComparisonOperator::LessThanOrEqual),
+        ">" => Ok(ComparisonOperator::GreaterThan),
+        ">=" => Ok(ComparisonOperator::GreaterThanOrEqual),
+        _ => Err(StoreError::InvalidOperation(
+            format!("Unknown comparison operator: {}", pair.as_str())
+        )),
+    }
+}
+
+// Nouvelle fonction pour parser un opérateur logique
+fn parse_logical_operator(pair: Pair<Rule>) -> Result<LogicalOperator> {
+    match pair.as_str() {
+        "&&" => Ok(LogicalOperator::And),
+        "||" => Ok(LogicalOperator::Or),
+        _ => Err(StoreError::InvalidOperation(
+            format!("Unknown logical operator: {}", pair.as_str())
         )),
     }
 }
@@ -167,6 +280,6 @@ fn parse_literal(pair: Pair<Rule>) -> Result<Expression> {
 }
 
 fn parse_path(pair: Pair<Rule>) -> Result<Path> {
-    let path_str = pair.as_str();
+    let path_str = pair.as_str().trim();
     Path::from_str(path_str).map_err(|e| StoreError::InvalidOperation(format!("Path error: {}", e)))
 }

@@ -11,18 +11,21 @@ use crate::ql::evaluator::EvaluationContext;
 
 /// Execute a parsed query against the store
 pub fn execute_query(store: &PersistentStore, query: &Query) -> Result<Value> {
-    // Créer un contexte d'évaluation
+    // Create an evaluation context
     let context = EvaluationContext::new(store);
     
-    // Exécuter toutes les opérations dans l'ordre
+    // Execute all operations in order
     for operation in &query.operations {
         execute_operation(store, &context, operation)?;
     }
     
-    // Évaluer et retourner l'expression de retour, ou true si pas de return
+    // Evaluate and return the return expression, or true if no return
     match &query.return_expr {
-        Some(expr) => context.evaluate(expr),
-        None => Ok(Value::Boolean(true)), // Retourne true si toutes les opérations ont réussi
+        Some(expr) => {
+            // The evaluator now handles filtered expressions (with where clauses)
+            context.evaluate(expr)
+        },
+        None => Ok(Value::Boolean(true)), // Return true if all operations succeeded
     }
 }
 
@@ -34,16 +37,16 @@ fn execute_operation(
 ) -> Result<()> {
     match operation {
         Operation::Assignment { path, expression } => {
-            // Évaluer l'expression
+            // Evaluate the expression
             let value = context.evaluate(expression)?;
             
-            // Stocker la valeur à l'emplacement spécifié
+            // Store the value at the specified path
             store.set(path.clone(), value)?;
             
             Ok(())
         },
         Operation::Delete { path } => {
-            // Supprimer la valeur à l'emplacement spécifié
+            // Delete the value at the specified path
             store.delete(path)?;
             
             Ok(())

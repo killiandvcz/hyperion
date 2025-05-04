@@ -12,7 +12,7 @@ pub enum StoreError {
     #[error("Path error: {0}")]
     PathError(#[from] PathError),
     
-    #[error("Value not found at path: {0}")]
+    #[error("Value not found at path: [{0}]")]
     NotFound(Path),
     
     #[error("Invalid operation: {0}")]

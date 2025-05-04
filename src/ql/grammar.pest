@@ -11,10 +11,32 @@ null = @{ "null" }
 path_segment = { identifier | "[" ~ number ~ "]" }
 path = { identifier ~ ("." ~ path_segment)* }
 
+// Special keyword 'their' for referencing the current entity
+their_path = { "their" ~ ("." ~ path_segment)* }
 
 literal = { string | number | boolean | null }
-function_call = { identifier ~ "(" ~ (expression ~ ("," ~ expression)*)? ~ ")" }
-expression = { function_call | path | literal  }
+function_call = { identifier ~ "(" ~ (primary_expression ~ ("," ~ primary_expression)*)? ~ ")" }
+
+// Base expressions without filtering
+primary_expression = { function_call | literal | their_path | path  }
+
+// Comparison operators
+comparison_op = { "==" | "!=" | "<" | "<=" | ">" | ">=" }
+
+// Simple condition
+condition = { primary_expression ~ comparison_op ~ primary_expression }
+
+// Logical operators
+logical_op = { "&&" | "||" }
+
+// Complete conditional expression (with AND/OR)
+where_expression = { condition ~ (logical_op ~ condition)* }
+
+// Where clause
+where_clause = { "where" ~ where_expression }
+
+// Expression with optional where clause
+expression = { primary_expression ~ where_clause? }
 
 assignment = { path ~ "=" ~ expression }
 delete_op = { "delete" ~ path }

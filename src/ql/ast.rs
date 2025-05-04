@@ -31,6 +31,52 @@ pub enum Operation {
     },
 }
 
+/// Comparison operators for conditions
+#[derive(Debug, Clone, PartialEq)]
+pub enum ComparisonOperator {
+    /// Equal (==)
+    Equal,
+    /// Not equal (!=)
+    NotEqual,
+    /// Less than (<)
+    LessThan,
+    /// Less than or equal (<=)
+    LessThanOrEqual,
+    /// Greater than (>)
+    GreaterThan,
+    /// Greater than or equal (>=)
+    GreaterThanOrEqual,
+}
+
+/// Logical operators for combining conditions
+#[derive(Debug, Clone, PartialEq)]
+pub enum LogicalOperator {
+    /// AND (&&)
+    And,
+    /// OR (||)
+    Or,
+}
+
+/// A condition in a where clause
+#[derive(Debug, Clone)]
+pub struct Condition {
+    /// Left side of the condition
+    pub left: Box<Expression>,
+    /// Comparison operator
+    pub operator: ComparisonOperator,
+    /// Right side of the condition
+    pub right: Box<Expression>,
+}
+
+/// A where clause with conditions
+#[derive(Debug, Clone)]
+pub struct WhereClause {
+    /// First condition
+    pub first_condition: Condition,
+    /// Additional conditions with logical operators
+    pub additional_conditions: Vec<(LogicalOperator, Condition)>,
+}
+
 /// Types of expressions
 #[derive(Debug, Clone)]
 pub enum Expression {
@@ -38,11 +84,20 @@ pub enum Expression {
     Literal(Value),
     /// A path reference
     Path(Path),
+    /// A 'their' path reference
+    TheirPath(Vec<String>),
     /// A function call
     FunctionCall {
         /// The function name
         name: String,
         /// The arguments to the function
         arguments: Vec<Expression>,
+    },
+    /// A filtered expression (with where clause)
+    Filtered {
+        /// The base expression
+        base: Box<Expression>,
+        /// The where clause
+        where_clause: WhereClause,
     },
 }
