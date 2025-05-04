@@ -117,10 +117,10 @@ In the future, you'll be able to shape the returned entities:
 ```
 {
   // Find all active users
-  return users where their.active == true
+  return users.* where their.active == true
   
   // Find users with high login count
-  return users where their.login_count > 100
+  return users.* where their.login_count > 100
 }
 ```
 
@@ -199,7 +199,7 @@ HyperionQL will excel at relationship-based queries:
 ```
 {
   // Subscribe to changes on a specific entity
-  subscribe(users.u-123456)
+  subscribe(users.u-123456.*)
   
   // Subscribe with a filter
   subscribe(users.*.status) where new_value == "online"
@@ -211,7 +211,7 @@ HyperionQL will excel at relationship-based queries:
 ```
 {
   // Define fine-grained access rules
-  define_access_control(users.*.profile, {
+  define_access_control(users.*.profile.*, {
     read: "public",
     write: "owner",
     rules: [
@@ -225,6 +225,45 @@ HyperionQL will excel at relationship-based queries:
 }
 ```
 
+### Optional Schema & Typing (Coming Soon 🚀)
+
+HyperionQL supports optional typing through a JSDoc-inspired syntax, providing the benefits of schemas while maintaining flexibility:
+
+```
+{
+  // Define type for a specific path
+  @typeof users.*.username = String(min=3, max=50)
+  @typeof users.*.email = String(format="email")
+  @typeof users.*.active = Boolean
+  
+  // Define a complete entity structure
+  @typeof users.* = {{
+    username: String(min=3, max=50),
+    email: String(format="email"),
+    created_at: Timestamp,
+    active: Boolean,
+    profile: {
+      bio: String(max=500),
+      location: String
+    }
+  }}
+  
+  // Add constraints and relationships
+  @constraint users.*.email unique
+  @index users.*.email
+  @references users.*.manager -> users
+  
+  return "Schema defined"
+}
+```
+
+Benefits of optional typing:
+- Documentation that lives with the data
+- Runtime validation for data integrity
+- Improved developer experience with potential IDE support
+- Query optimization opportunities
+- Smooth transition from schema-free to typed data
+
 ## Rich Query Examples
 
 ### Social Media Feed (Coming Soon 🚀)
@@ -235,7 +274,7 @@ HyperionQL will excel at relationship-based queries:
   let user = users.u-123456
   
   // Get user's friends' recent posts with likes and comments
-  let feed = posts where 
+  let feed = posts.* where 
     their.author in user.friends && 
     their.created_at > (now() - days(7))
   
@@ -252,8 +291,8 @@ HyperionQL will excel at relationship-based queries:
         avatar
       },
       created_at: post.created_at,
-      likes: count(likes) where their.post_id == post.id,
-      comments: comments where their.post_id == post.id {
+      likes: count(likes.*) where their.post_id == post.id,
+      comments: comments.* where their.post_id == post.id {
         id,
         content,
         author: users[their.author].username
@@ -268,7 +307,7 @@ HyperionQL will excel at relationship-based queries:
 ```
 {
   // Find products running low on inventory
-  let low_inventory = products where 
+  let low_inventory = products.* where 
     their.stock < their.reorder_threshold && 
     !their.discontinued
   
