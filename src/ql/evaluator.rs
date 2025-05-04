@@ -29,7 +29,6 @@ impl<'a> EvaluationContext<'a> {
         match expr {
             Expression::Literal(val) => Ok(val.clone()),
             Expression::Path(path) => self.evaluate_path(path),
-            Expression::Entity { path } => self.evaluate_entity(path),
             Expression::FunctionCall { name, arguments } => {
                 self.evaluate_function_call(name, arguments)
             }
@@ -38,16 +37,23 @@ impl<'a> EvaluationContext<'a> {
     
     /// Evaluate a path expression by fetching its value from the store
     fn evaluate_path(&self, path: &Path) -> Result<Value> {
-        self.store.get(path)
+        // Essayer d'abord de récupérer une valeur directe
+        match self.store.get(path) {
+            Ok(value) => Ok(value),
+            Err(StoreError::NotFound(_)) => {
+                // Si la valeur directe n'existe pas, essayer de reconstruire une entité
+                match reconstruct_entity(self.store, path) {
+                    Ok(entity) => entity_to_value(&entity),
+                    Err(_) => Err(StoreError::NotFound(path.clone()))
+                }
+            },
+            Err(e) => Err(e)
+        }
     }
     
     /// Evaluate an entity expression by reconstructing the entity
     fn evaluate_entity(&self, path: &Path) -> Result<Value> {
-        // Utiliser la fonction reconstruct_entity existante
         let entity = reconstruct_entity(self.store, path)?;
-        
-        // Convertir Entity en Value pour le retour
-        // Cette conversion n'est pas directement disponible, nous devrons l'implementer
         entity_to_value(&entity)
     }
     

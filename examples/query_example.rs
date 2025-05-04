@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\nRunning a query with entity reconstruction...");
     
     let query2 = r#"{
-        return entity(users.u-123456)
+        return users.u-123456
     }"#;
     
     let result2 = ql::execute_query(&store, query2)?;

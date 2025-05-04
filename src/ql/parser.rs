@@ -99,13 +99,11 @@ fn parse_expression(pair: Pair<Rule>) -> Result<Expression> {
             let path = parse_path(inner)?;
             Ok(Expression::Path(path))
         },
-        Rule::entity_expr => {
-            let path_pair = inner.into_inner().next().unwrap();
-            let path = parse_path(path_pair)?;
-            
-            Ok(Expression::Entity { path })
-        },
+        // Supprimer ou modifier cette partie pour ne plus traiter entity_expr
+        // Rule::entity_expr => { ... }
         Rule::function_call => {
+            // Si on veut conserver la compatibilité avec entity() pour l'instant,
+            // on pourrait ajouter une vérification spéciale ici
             let mut inner_pairs = inner.into_inner();
             let name_pair = inner_pairs.next().unwrap();
             let name = name_pair.as_str().to_string();
@@ -114,6 +112,13 @@ fn parse_expression(pair: Pair<Rule>) -> Result<Expression> {
             for arg_pair in inner_pairs {
                 let arg = parse_expression(arg_pair)?;
                 arguments.push(arg);
+            }
+            
+            // Pour rétrocompatibilité temporaire
+            if name == "entity" && arguments.len() == 1 {
+                if let Expression::Path(path) = &arguments[0] {
+                    return Ok(Expression::Path(path.clone()));
+                }
             }
             
             Ok(Expression::FunctionCall { name, arguments })

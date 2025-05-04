@@ -38,11 +38,6 @@ pub enum Expression {
     Literal(Value),
     /// A path reference
     Path(Path),
-    /// An entity reconstruction
-    Entity {
-        /// The path to reconstruct as an entity
-        path: Path,
-    },
     /// A function call
     FunctionCall {
         /// The function name
