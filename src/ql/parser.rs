@@ -6,9 +6,9 @@ use pest::Parser;
 use pest_derive::Parser;
 use pest::iterators::{Pair, Pairs};
 
-use crate::errors::{Result, StoreError};
-use crate::path::Path;
-use crate::value::Value;
+use crate::core::errors::{Result, StoreError};
+use crate::core::path::Path;
+use crate::core::value::Value;
 use crate::ql::ast::{Query, Operation, Expression, ComparisonOperator, LogicalOperator, Condition, WhereClause};
 use std::str::FromStr;
 

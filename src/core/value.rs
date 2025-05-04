@@ -4,7 +4,7 @@
 //! of values that can be stored at database endpoints.
 
 use std::fmt;
-use crate::path::Path;
+use super::path::Path;
 use serde::{Serialize, Deserialize};
 
 /// The different types of values that can be stored in the database

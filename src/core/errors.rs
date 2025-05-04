@@ -4,7 +4,7 @@
 //! during database operations.
 
 use thiserror::Error;
-use crate::path::{Path, PathError};
+use super::path::{Path, PathError};
 
 /// Errors that can occur during database operations
 #[derive(Error, Debug)]

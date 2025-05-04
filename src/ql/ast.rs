@@ -2,8 +2,8 @@
 //!
 //! This module defines the structures that represent the parsed query.
 
-use crate::path::Path;
-use crate::value::Value;
+use crate::core::path::Path;
+use crate::core::value::Value;
 
 /// A complete query
 #[derive(Debug, Clone)]

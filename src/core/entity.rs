@@ -1,14 +1,122 @@
-//! Entity reconstruction for Persistent Store
+//! Entity reconstruction for Hyperion
 //!
 //! This module provides functionality to reconstruct entities from
-//! individual endpoints that share a common path prefix in a persistent store.
+//! individual endpoints that share a common path prefix.
 
 use std::collections::HashMap;
-use crate::path::Path;
-use crate::value::Value;
-use crate::entity::Entity;
-use crate::errors::{Result, StoreError};
-use crate::persistent_store::PersistentStore;
+use serde::{Serialize, Deserialize};
+use super::path::Path;
+use super::value::Value;
+use super::errors::{Result, StoreError};
+use super::store::Store;
+
+/// A reconstructed entity from the database
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Entity {
+    /// Null value
+    Null,
+    /// Boolean value
+    Boolean(bool),
+    /// Integer value
+    Integer(i64),
+    /// Floating point value
+    Float(f64),
+    /// String value
+    String(String),
+    /// Binary data with optional MIME type
+    Binary(Vec<u8>, Option<String>),
+    /// Reference to another path
+    Reference(Path),
+    /// Object with named fields
+    Object(HashMap<String, Entity>),
+    /// Array of values
+    Array(Vec<Entity>),
+}
+
+impl From<Value> for Entity {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Null => Entity::Null,
+            Value::Boolean(b) => Entity::Boolean(b),
+            Value::Integer(i) => Entity::Integer(i),
+            Value::Float(f) => Entity::Float(f),
+            Value::String(s) => Entity::String(s),
+            Value::Binary(data, mime) => Entity::Binary(data, mime),
+            Value::Reference(path) => Entity::Reference(path),
+        }
+    }
+}
+
+impl Entity {
+    /// Convert the entity to a debug string representation
+    pub fn to_string_pretty(&self, indent: usize) -> String {
+        match self {
+            Entity::Null => "null".to_string(),
+            Entity::Boolean(b) => b.to_string(),
+            Entity::Integer(i) => i.to_string(),
+            Entity::Float(f) => f.to_string(),
+            Entity::String(s) => format!("\"{}\"", s),
+            Entity::Binary(_, mime) => {
+                if let Some(m) = mime {
+                    format!("[binary data: {}]", m)
+                } else {
+                    "[binary data]".to_string()
+                }
+            },
+            Entity::Reference(path) => format!("@{}", path),
+            Entity::Object(map) => {
+                if map.is_empty() {
+                    return "{}".to_string();
+                }
+                
+                let mut result = "{\n".to_string();
+                
+                for (key, value) in map {
+                    let indentation = " ".repeat(indent + 2);
+                    let value_str = value.to_string_pretty(indent + 2);
+                    result.push_str(&format!("{}\"{}\": {},\n", indentation, key, value_str));
+                }
+                
+                // Remove trailing comma and newline
+                if !map.is_empty() {
+                    result.pop();
+                    result.pop();
+                    result.push('\n');
+                }
+                
+                result.push_str(&" ".repeat(indent));
+                result.push('}');
+                
+                result
+            },
+            Entity::Array(items) => {
+                if items.is_empty() {
+                    return "[]".to_string();
+                }
+                
+                let mut result = "[\n".to_string();
+                
+                for item in items {
+                    let indentation = " ".repeat(indent + 2);
+                    let item_str = item.to_string_pretty(indent + 2);
+                    result.push_str(&format!("{}{},\n", indentation, item_str));
+                }
+                
+                // Remove trailing comma and newline
+                if !items.is_empty() {
+                    result.pop();
+                    result.pop();
+                    result.push('\n');
+                }
+                
+                result.push_str(&" ".repeat(indent));
+                result.push(']');
+                
+                result
+            },
+        }
+    }
+}
 
 /// Insert a value into the appropriate place in the entity
 fn insert_into_entity(
@@ -101,12 +209,12 @@ fn get_remaining_segments(path: &Path, prefix: &Path) -> Vec<String> {
     
     path_segments[prefix_segments.len()..]
         .iter()
-        .map(|s| s.as_str())
+        .map(|s| s.as_str().to_string())
         .collect()
 }
 
-/// Reconstruct an entity from a collection of endpoints in a persistent store
-pub fn reconstruct_entity(store: &PersistentStore, prefix: &Path) -> Result<Entity> {
+/// Reconstruct an entity from a collection of endpoints in a store
+pub fn reconstruct_entity<S: Store + ?Sized>(store: &S, prefix: &Path) -> Result<Entity> {
     // Get all endpoints under the prefix
     let endpoints = store.get_prefix(prefix)?;
     
