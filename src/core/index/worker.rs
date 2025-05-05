@@ -1,17 +1,23 @@
+use std::any::Any;
 // src/core/index/worker.rs (modifié)
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc::{self, Sender, Receiver};
 use tokio::task::JoinHandle;
 
+use crate::core::index::value_index;
 use crate::core::path::Path;
 use crate::core::errors::{Result, StoreError};
 use super::types::{IndexOp, IndexStats, IndexImplementation};
+use super::value_index::ValueIndex;
 
 // Trait pour effacer le type générique de l'index
 trait AnyIndex: Send + Sync {
     fn add_path(&mut self, path: &Path) -> Result<()>;
     fn remove_path(&mut self, path: &Path) -> Result<()>;
     fn name(&self) -> &str;
+    // Ajout de ces méthodes pour le downcasting
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 // Implémentation de AnyIndex qui enveloppe un IndexImplementation
@@ -33,6 +39,14 @@ impl<T: IndexImplementation + 'static> AnyIndex for IndexWrapper<T> {
     
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        &self.index
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.index
     }
 }
 
@@ -171,7 +185,34 @@ impl IndexWorker {
                 IndexOp::Shutdown => {
                     println!("Worker: Shutting down");
                     break; // Sortir de la boucle pour arrêter
-                }
+                },
+                IndexOp::AddWithValue(path, value) => {
+                    // Chercher l'index de valeurs dans la liste des index
+                    let mut success = false;
+                    for index in &mut indexes {
+                        if index.name() == "ValueIndex" {
+                            // Downcast depuis la référence
+                            if let Some(value_index) = index.as_any_mut().downcast_mut::<ValueIndex>() {
+                                match value_index.add_with_value(&path, &value) {
+                                    Ok(()) => {
+                                        success = true;
+                                        break;
+                                    },
+                                    Err(e) => {
+                                        eprintln!("Error adding path with value: {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    if success {
+                        let mut stats = stats.lock().unwrap();
+                        stats.total_operations += 1;
+                        stats.total_adds += 1;
+                        stats.pending_operations = stats.pending_operations.saturating_sub(1);
+                    }
+                },
             }
         }
     }

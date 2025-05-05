@@ -3,6 +3,7 @@
 use std::any::Any;
 use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use sled::Db;
 use bincode::{serialize, deserialize};
@@ -131,12 +132,13 @@ impl Store for PersistentStore {
         
         // Update indexes asynchronously
         let path_clone = path.clone();
+        let value_clone = value.clone();
         let index_system = self.index_system.clone();
         
         // Spawn a task to handle indexing
         tokio::spawn(async move {
-            if let Err(e) = index_system.add_path(path_clone).await {
-                println!("Error updating index: {:?}", e);
+            if let Err(e) = index_system.add_path_with_value(path_clone, value_clone).await {
+                println!("Error updating value index: {:?}", e);
             }
         });
         

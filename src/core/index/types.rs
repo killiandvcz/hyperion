@@ -1,14 +1,18 @@
 // src/core/index/types.rs
-use crate::core::path::Path;
+use crate::{core::path::Path};
+use crate::core::value::Value;
 use std::sync::Arc;
+use crate::core::errors::Result;
 
 /// Type d'opération d'indexation
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum IndexOp {
     /// Ajouter un chemin à l'index
     Add(Path),
     /// Supprimer un chemin de l'index
     Remove(Path),
+    /// Ajouter un chemin avec sa valeur (pour l'index de valeurs)
+    AddWithValue(Path, Value),
     /// Forcer un flush des opérations en attente
     Flush,
     /// Arrêter le worker
@@ -47,4 +51,16 @@ pub trait IndexImplementation: Send + Sync {
     
     /// Obtenir le nom de l'implémentation
     fn name(&self) -> &'static str;
+}
+
+/// Trait spécifique pour les index par valeur
+pub trait ValueIndexing: IndexImplementation {
+    /// Ajoute ou met à jour un chemin avec sa valeur associée
+    fn add_path_with_value(&mut self, path: &Path, value: &Value) -> Result<()>;
+    
+    /// Trouve les chemins correspondant à une valeur spécifique
+    fn find_by_value(&self, value: &Value) -> Result<Vec<Path>>;
+    
+    /// Trouve les chemins satisfaisant une condition
+    fn find_by_condition(&self, operator: &str, value: &Value) -> Result<Vec<Path>>;
 }
