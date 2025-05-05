@@ -217,6 +217,7 @@ fn get_remaining_segments(path: &Path, prefix: &Path) -> Vec<String> {
 pub fn reconstruct_entity<S: Store + ?Sized>(store: &S, prefix: &Path) -> Result<Entity> {
     // Get all endpoints under the prefix
     let endpoints = store.get_prefix(prefix)?;
+    println!("Endpoints: {:?}", endpoints);
     
     if endpoints.is_empty() {
         return Err(StoreError::NotFound(prefix.clone()));

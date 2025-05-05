@@ -1,8 +1,9 @@
-// src/storage/persistent.rs - Modification complète
+// src/storage/persistent.rs
 
 use std::any::Any;
 use std::path::PathBuf;
 use std::sync::Arc;
+
 use sled::Db;
 use bincode::{serialize, deserialize};
 use tokio::sync::OnceCell;
@@ -11,16 +12,14 @@ use crate::core::path::Path;
 use crate::core::value::Value;
 use crate::core::errors::{Result, StoreError};
 use crate::core::store::Store;
-use crate::core::index::{Index, PrefixIndex, WildcardIndex, IndexStats};
+use crate::core::index::{IndexSystem, IndexStats};
 
 /// A persistent store for the database using sled
 pub struct PersistentStore {
     /// The underlying sled database
     db: Arc<Db>,
-    /// Index for prefix operations
-    prefix_index: Index,
-    /// Index for wildcard operations
-    wildcard_index: Index,
+    /// Unified index system
+    index_system: IndexSystem,
     /// Statistics (cached to avoid async calls in sync contexts)
     cached_stats: OnceCell<IndexStats>,
 }
@@ -33,19 +32,12 @@ impl PersistentStore {
             .map_err(|e| StoreError::Internal(format!("Failed to open database: {}", e)))?;
         let db_arc = Arc::new(db);
         
-        // Create the indexes
-        let prefix_impl = PrefixIndex::new(Arc::clone(&db_arc), "prefix_index")?;
-        let mut prefix_index = Index::new(prefix_impl);
-        prefix_index.start_worker()?;
-        
-        let wildcard_impl = WildcardIndex::new(Arc::clone(&db_arc), "wildcard_index")?;
-        let mut wildcard_index = Index::new(wildcard_impl);
-        wildcard_index.start_worker()?;
+        // Create the index system
+        let index_system = IndexSystem::new(Arc::clone(&db_arc))?;
         
         let store = PersistentStore {
             db: db_arc,
-            prefix_index,
-            wildcard_index,
+            index_system,
             cached_stats: OnceCell::new(),
         };
         
@@ -69,11 +61,9 @@ impl PersistentStore {
     
     /// Rebuild all indexes from scratch
     async fn rebuild_indexes_async(&self) -> Result<()> {
-        // Clear the indexes
-        self.prefix_index.clear().await?;
-        self.wildcard_index.clear().await?;
+        println!("Rebuilding indexes from existing data...");
         
-        // Iterate through all paths and add them to indexes
+        // Iterate through all paths in the database and add them to indexes
         for item in self.db.iter() {
             let (key_bytes, _) = item
                 .map_err(|e| StoreError::Internal(format!("Failed to iterate database: {}", e)))?;
@@ -83,35 +73,25 @@ impl PersistentStore {
                 .map_err(|e| StoreError::DeserializationError(e.to_string()))?;
             
             // Add to indexes asynchronously
-            self.prefix_index.update(path.clone(), Some(())).await?;
-            self.wildcard_index.update(path, Some(())).await?;
+            self.index_system.add_path(path).await?;
         }
         
         // Flush the indexes to ensure all operations are complete
-        self.prefix_index.flush().await?;
-        self.wildcard_index.flush().await?;
+        self.index_system.flush().await?;
+        println!("Index rebuilding complete.");
         
         Ok(())
     }
     
     /// Get index statistics
     pub async fn index_stats_async(&self) -> Result<IndexStats> {
-        // Get stats from both indexes
-        let prefix_stats = self.prefix_index.stats();
-        let wildcard_stats = self.wildcard_index.stats();
-        
-        // Combine stats
-        let combined_stats = IndexStats {
-            total_operations: prefix_stats.total_operations + wildcard_stats.total_operations,
-            total_adds: prefix_stats.total_adds + wildcard_stats.total_adds,
-            total_removes: prefix_stats.total_removes + wildcard_stats.total_removes,
-            pending_operations: prefix_stats.pending_operations + wildcard_stats.pending_operations,
-        };
+        // Get combined stats from the index system
+        let stats = self.index_system.stats();
         
         // Cache the stats
-        let _ = self.cached_stats.set(combined_stats.clone());
+        let _ = self.cached_stats.set(stats.clone());
         
-        Ok(combined_stats)
+        Ok(stats)
     }
     
     /// Get index statistics (sync version)
@@ -121,30 +101,18 @@ impl PersistentStore {
             return Ok(stats.clone());
         }
         
-        // Otherwise, just return the current stats without async calls
-        let prefix_stats = self.prefix_index.stats();
-        let wildcard_stats = self.wildcard_index.stats();
-        
-        let combined_stats = IndexStats {
-            total_operations: prefix_stats.total_operations + wildcard_stats.total_operations,
-            total_adds: prefix_stats.total_adds + wildcard_stats.total_adds,
-            total_removes: prefix_stats.total_removes + wildcard_stats.total_removes,
-            pending_operations: prefix_stats.pending_operations + wildcard_stats.pending_operations,
-        };
-        
-        Ok(combined_stats)
+        // Otherwise, return the current stats
+        Ok(self.index_system.stats().clone())
     }
 }
 
-// Implémentation des méthodes Store pour PersistentStore
 impl Store for PersistentStore {
-    // Toutes les méthodes synchrones qui utilisaient runtime.block_on() doivent être
-    // réécrites pour être purement synchrones ou utiliser des fonctions/méthodes auxiliaires
-
     fn set(&mut self, path: Path, value: Value) -> Result<()> {
         if path.is_empty() {
             return Err(StoreError::InvalidOperation("Cannot set value at empty path".to_string()));
         }
+        
+        println!("PersistentStore: Setting value at path: {:?}", path);
         
         // Serialize the path and value
         let path_bytes = serialize(&path)
@@ -157,9 +125,20 @@ impl Store for PersistentStore {
         self.db.insert(path_bytes, value_bytes)
             .map_err(|e| StoreError::Internal(format!("Failed to insert data: {}", e)))?;
         
-        // Update indexes (non-blocking, fire and forget)
-        let _ = self.prefix_index.update(path.clone(), Some(()));
-        let _ = self.wildcard_index.update(path, Some(()));
+        // Flush to ensure data is persisted
+        self.db.flush()
+            .map_err(|e| StoreError::Internal(format!("Failed to flush database: {}", e)))?;
+        
+        // Update indexes asynchronously
+        let path_clone = path.clone();
+        let index_system = self.index_system.clone();
+        
+        // Spawn a task to handle indexing
+        tokio::spawn(async move {
+            if let Err(e) = index_system.add_path(path_clone).await {
+                println!("Error updating index: {:?}", e);
+            }
+        });
         
         Ok(())
     }
@@ -202,9 +181,20 @@ impl Store for PersistentStore {
             return Err(StoreError::NotFound(path.clone()));
         }
         
-        // Update indexes (non-blocking, fire and forget)
-        let _ = self.prefix_index.update(path.clone(), None);
-        let _ = self.wildcard_index.update(path.clone(), None);
+        // Flush to ensure data removal is persisted
+        self.db.flush()
+            .map_err(|e| StoreError::Internal(format!("Failed to flush database: {}", e)))?;
+        
+        // Update indexes asynchronously
+        let path_clone = path.clone();
+        let index_system = self.index_system.clone();
+        
+        // Spawn a task to handle index removal
+        tokio::spawn(async move {
+            if let Err(e) = index_system.remove_path(path_clone).await {
+                println!("Error removing from index: {:?}", e);
+            }
+        });
         
         Ok(())
     }
@@ -226,11 +216,18 @@ impl Store for PersistentStore {
     }
     
     fn list_prefix(&self, prefix: &Path) -> Result<Vec<Path>> {
-        // Utiliser l'index synchrone sans block_on
-        self.prefix_index.find_prefix(prefix)
+        println!("PersistentStore: Listing paths with prefix: {:?}", prefix);
+        
+        // Use the index system to find paths by prefix
+        let paths = self.index_system.find_by_prefix(prefix)?;
+        
+        println!("PersistentStore: Found {} paths with prefix", paths.len());
+        Ok(paths)
     }
     
     fn get_prefix(&self, prefix: &Path) -> Result<Vec<(Path, Value)>> {
+        println!("PersistentStore: Getting all values with prefix: {:?}", prefix);
+        
         let mut results = Vec::new();
         
         // Find all paths with this prefix
@@ -243,10 +240,13 @@ impl Store for PersistentStore {
             }
         }
         
+        println!("PersistentStore: Found {} value pairs", results.len());
         Ok(results)
     }
     
     fn query(&self, pattern: &Path) -> Result<Vec<(Path, Value)>> {
+        println!("PersistentStore: Querying with pattern: {:?}", pattern);
+        
         let mut results = Vec::new();
         
         // If there are no wildcards, we can do a simple get
@@ -257,8 +257,8 @@ impl Store for PersistentStore {
             return Ok(results);
         }
         
-        // Use the wildcard index without block_on
-        let matching_paths = self.wildcard_index.find_matches(pattern)?;
+        // Use the index system to find matching paths
+        let matching_paths = self.index_system.find_by_pattern(pattern)?;
         
         // Get the values for all matching paths
         for path in matching_paths {
@@ -267,12 +267,12 @@ impl Store for PersistentStore {
             }
         }
         
+        println!("PersistentStore: Found {} matches", results.len());
         Ok(results)
     }
 
     fn count(&self) -> Result<usize> {
         let count = self.db.len();
-        
         Ok(count as usize)
     }
     
@@ -286,9 +286,11 @@ impl Store for PersistentStore {
         self.db.flush()
             .map_err(|e| StoreError::Internal(format!("Failed to flush database: {}", e)))?;
         
-        // Flush indexes without block_on (non-blocking)
-        let _ = self.prefix_index.flush();
-        let _ = self.wildcard_index.flush();
+        // Flush indexes (non-blocking)
+        let index_system = self.index_system.clone();
+        tokio::spawn(async move {
+            let _ = index_system.flush().await;
+        });
         
         Ok(())
     }
@@ -300,8 +302,10 @@ impl Store for PersistentStore {
 
 impl Drop for PersistentStore {
     fn drop(&mut self) {
-        // Shutdown indexes (non-blocking)
-        let _ = self.prefix_index.shutdown();
-        let _ = self.wildcard_index.shutdown();
+        // Shutdown index system (non-blocking)
+        let index_system = self.index_system.clone();
+        tokio::spawn(async move {
+            let _ = index_system.shutdown().await;
+        });
     }
 }

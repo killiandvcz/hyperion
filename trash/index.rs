@@ -121,6 +121,7 @@ impl Index {
                 IndexOp::Add(path) => {
                     let mut index = index_impl.write().unwrap();
                     if let Ok(()) = index.add_path_internal(&path) {
+                        println!("ADDED PATH: {:?}", path);
                         let mut stats = stats.lock().unwrap();
                         stats.total_operations += 1;
                         stats.total_adds += 1;
@@ -146,6 +147,7 @@ impl Index {
     
     /// Asynchronously update the index by adding or removing a path
     pub async fn update(&self, path: Path, value: Option<()>) -> Result<()> {
+        println!("Updating index with path: {:?}", path);
         let tx = self.tx.as_ref().ok_or_else(|| 
             StoreError::Internal("Index worker not started".to_string())
         )?;
@@ -172,7 +174,9 @@ impl Index {
     
     /// Synchronously find all paths with the given prefix
     pub fn find_prefix(&self, prefix: &Path) -> Result<Vec<Path>> {
+        println!("Finding prefix: {:?}", prefix);
         let index = self.index_impl.read().unwrap();
+        println!("Index type: {}", index.name());
         index.find_prefix(prefix)
     }
     
@@ -284,6 +288,8 @@ impl BaseIndex for PrefixIndex {
         let tree = self.get_tree()?;
         let key = Self::create_index_key(path)?;
         let value = vec![1]; // Just a marker
+
+        println!("Inserting into PrefixIndex: {:?}", path);
         
         tree.insert(key, value)
         .map_err(|e| StoreError::Internal(format!("Failed to insert into index: {}", e)))?;
@@ -302,18 +308,24 @@ impl BaseIndex for PrefixIndex {
     }
     
     fn find_prefix(&self, prefix: &Path) -> Result<Vec<Path>> {
+        println!("\n");
+        println!("Finding prefix in PrefixIndex: {:?}", prefix);
         let tree = self.get_tree()?;
         let prefix_bytes = Self::create_prefix_start(prefix)?;
         
         let mut results = Vec::new();
+        println!("Prefix bytes: {:?}", prefix_bytes);
         
+        println!("Iterating through index tree for prefix: {:?}", prefix);
         for item in tree.scan_prefix(prefix_bytes) {
+            println!("Scanning item: {:?}", item);
             let (key, _) = item
             .map_err(|e| StoreError::Internal(format!("Failed to scan index: {}", e)))?;
             
             let path: Path = deserialize(&key)
             .map_err(|e| StoreError::DeserializationError(e.to_string()))?;
             
+            println!("Found path: {:?}", path);
             results.push(path);
         }
         
@@ -530,6 +542,7 @@ impl WildcardIndex {
 impl BaseIndex for WildcardIndex {
     fn add_path_internal(&mut self, path: &Path) -> Result<()> {
         // Index for both types of wildcards
+        println!("Indexing path for wildcards: {:?}", path);
         self.index_for_single_wildcards(path)?;
         self.index_for_multi_wildcards(path)?;
         
@@ -548,10 +561,11 @@ impl BaseIndex for WildcardIndex {
         // For prefix search, we use a simpler approach
         // We just iterate through all paths in the single wildcard index
         // This could be optimized in a real implementation
-        
+        println!("WILDCARD FIND: {:?}", prefix);
         let tree = self.get_single_tree()?;
         let mut results = HashSet::new();
         
+        println!("Iterating through index tree for prefix: {:?}", prefix);
         for item in tree.iter() {
             let (_, value_bytes) = item
                 .map_err(|e| StoreError::Internal(format!("Failed to iterate index: {}", e)))?;
@@ -652,5 +666,17 @@ impl BaseIndex for WildcardIndex {
     
     fn name(&self) -> &'static str {
         "WildcardIndex"
+    }
+}
+
+
+impl Clone for Index {
+    fn clone(&self) -> Self {
+        Index {
+            index_impl: Arc::clone(&self.index_impl),
+            tx: self.tx.clone(),
+            stats: Arc::clone(&self.stats),
+            worker_handle: None, // Le handle ne se clone pas, mais ce n'est pas grave
+        }
     }
 }
