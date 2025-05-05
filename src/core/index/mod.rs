@@ -30,10 +30,13 @@ impl IndexSystem {
         let prefix_index = Arc::new(Mutex::new(PrefixIndex::new(db.clone(), "prefix_index")?));
         let wildcard_index = Arc::new(Mutex::new(WildcardIndex::new(db.clone(), "wildcard_index")?));
         
-        // Créer et démarrer le worker
+        // Créer et configurer le worker
         let mut worker = IndexWorker::new();
-        worker.start(prefix_index.clone())?;
-        worker.start(wildcard_index.clone())?;
+        worker.add_index(prefix_index.clone())?;
+        worker.add_index(wildcard_index.clone())?;
+        
+        // Démarrer le worker une fois que tous les index sont ajoutés
+        worker.start()?;
         
         Ok(IndexSystem {
             prefix_index,
